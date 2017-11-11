@@ -1,6 +1,6 @@
 import numpy as np
-
-
+from scipy.special import expit
+import math
 class Model(object):
 
     def __init__(self):
@@ -89,12 +89,12 @@ class Majority(Model):
     
         #labels are already stripped and copied to array y
         #count the number of 1 and zeros in y
-        total_examples, self.num_input_features = X.shape
+        self.num_input_features = X.shape[1]
         num_zeros = 0
         num_ones = 0
-         
+        
         #Count the number of zeros and ones in the train data
-        for i in range(total_examples):
+        for i in range(self.num_input_features):
             if y[i] == 0:
                 num_zeros += 1
             else:
@@ -108,17 +108,9 @@ class Majority(Model):
             
             
     def predict(self, X):
-        if self.num_input_features is None:
-            raise Exception("fit must be called before")
+        #if num_input_features < 0:
+        #raise Exception("fit must be called before")
         num_examples, num_input_features = X.shape
-        if num_input_features < self.num_input_features:
-            X = X.copy()
-            X._shape = (num_examples, self.num_input_features)
-        # Or perhaps more features are seen at test time, in which case we will
-        # simply ignore them.
-        if num_input_features > self.num_input_features:
-            X = X[:, :self.num_input_features]
-        y_hat = np.empty([num_examples], dtype=np.int)
         # predict the test data as the max_label
         y_hat = np.full([num_examples], self.max_label, dtype=np.int)
         return (y_hat)
@@ -177,3 +169,92 @@ class Perceptron(Model):
                 y_hat[i] = 0
         return (y_hat)
 
+class Logistic(Model):
+
+    #def __init__(self, optimizer, online_learning_rate, online_training_iterations):
+    def __init__(self, optimizer, online_learning_rate, online_training_iterations):
+        super().__init__()
+        self.optimizer = optimizer
+        self.online_learning_rate = online_learning_rate
+        self.online_training_iterations = online_training_iterations
+        self.W = []
+    def sigmoid(self, w, x):
+        #return logistic.cdf(x.dot(w))
+        return expit(x.dot(w))
+
+    def fit(self, X, y):
+        #create a matrix for holding the weights.Initialize the weights to zero
+        self.W = np.zeros((1, X.shape[1]), dtype=np.float)
+        
+        if self.optimizer == "sgd":
+            self.sgd_fit(X, y)
+        else:
+            self.sgd_adam_fit(X, y)
+        
+        #Fitting: Maximum likliehood or minimize loss.
+        # Use Stochastic gradient
+        #caluculate change in w for each input
+        #Update the values of W which are available for prediction function.
+    def sgd_fit(self, X, y):
+        #get the number of inputs and features
+        num_examples, self.num_input_features = X.shape
+        while (self.online_training_iterations >= 0):
+            for i in range(num_examples):
+                y_i = y[i]
+                x_i = X[i, :]
+                #x_i = X[i]
+                w_t = np.transpose(self.W)
+                #w_delta = ((1-y_i) * self.sigmoid(w_t,x_i) * x_i) - (y_i * self.sigmoid(-w_t, x_i) * x_i)
+                w_delta = ((1-y_i) * expit(x_i.dot(w_t)) * x_i) - (y_i * expit(-x_i.dot(w_t)) * x_i)
+                self.W = self.W - (self.online_learning_rate * w_delta)
+            self.online_training_iterations -= 1
+     
+    def sgd_adam_fit(self, X, y):
+        #get the number of inputs and features
+        num_examples, self.num_input_features = X.shape
+        beta_1 = 0.9
+        beta_2 = 0.999
+        epsilon = 10**(-8)
+        m = np.zeros(self.W.shape, dtype=np.float64)
+        v = np.zeros(self.W.shape, dtype=np.float64)
+        
+        #set step count to zero
+        t = 0
+        eta = self.online_learning_rate
+        while (self.online_training_iterations >= 0):
+            for i in range(num_examples):
+                y_i = y[i]
+                x_i = X[i, :]
+                w_t = np.transpose(self.W)
+                t = t + 1
+                g = ((1-y_i) * self.sigmoid(w_t,x_i) * x_i) - (y_i * self.sigmoid(-w_t, x_i) * x_i)
+                m = beta_1 * m + (1 - beta_1) * g
+                m_hat = m / (1 - (beta_1)**t)
+                
+                v = beta_2 * v + (1 - beta_2) * (g)**2
+                v_hat = v / (1 - (beta_2)**t)
+                self.W = self.W - eta * (m_hat / ((v_hat)**(0.5) + epsilon))
+            self.online_training_iterations -= 1
+    def predict(self, X):
+        if self.num_input_features is None:
+            raise Exception('fit must be called before predict.')
+        num_examples, num_input_features = X.shape
+        y_hat = np.empty([num_examples], dtype=np.int)
+        if num_input_features < self.num_input_features:
+            X = X.copy()
+            X._shape = (num_examples, self.num_input_features)
+        # Or perhaps more features are seen at test time, in which case we will
+        # simply ignore them.
+        if num_input_features > self.num_input_features:
+            X = X[:, :self.num_input_features]
+        #For each input in test data, caluclate the y value based on weights.
+        w_t = np.transpose(self.W)
+        for i in range(num_examples):
+            x_i = X[i, :]
+            y_temp = self.sigmoid(w_t, x_i)
+        
+            if y_temp >= 0.5:
+                y_hat[i] = 1
+            else:
+                y_hat[i] = 0
+        return y_hat
